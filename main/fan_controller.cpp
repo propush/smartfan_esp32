@@ -1,5 +1,6 @@
 #include "fan_controller.hpp"
 #include "config.hpp"
+#include "led_controller.hpp"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -14,41 +15,106 @@ namespace {
     QueueHandle_t cmd_queue = nullptr;
     TaskHandle_t task_handle = nullptr;
     std::atomic<bool> fan_is_on{false};
-    int64_t fan_on_time_us = 0;
+    std::atomic<uint8_t> press_count{0};
+    int64_t fan_off_time_us = 0;  // Absolute time when fan should turn off
+
+    void handle_on_command()
+    {
+        // First press: start fan with 30s timer
+        press_count.store(1);
+        fan_off_time_us = esp_timer_get_time() + (static_cast<int64_t>(FAN_ON_TIME_MS) * 1000);
+
+        gpio_set_level(FAN_GATE_PIN, 1);
+        fan_is_on.store(true);
+
+        ESP_LOGI(TAG, "Fan ON (press 1/%lu, %lu ms)",
+                 static_cast<unsigned long>(MAX_PRESS_COUNT),
+                 static_cast<unsigned long>(FAN_ON_TIME_MS));
+
+        // Blink LED once
+        led_controller::blink(1);
+    }
+
+    void handle_add_time_command()
+    {
+        uint8_t current_count = press_count.load();
+
+        if (current_count >= MAX_PRESS_COUNT) {
+            ESP_LOGI(TAG, "Max presses reached (%lu), ignoring",
+                     static_cast<unsigned long>(MAX_PRESS_COUNT));
+            return;
+        }
+
+        if (!fan_is_on.load()) {
+            // Fan not running, treat as On command
+            handle_on_command();
+            return;
+        }
+
+        // Add 30s to existing timer
+        current_count++;
+        press_count.store(current_count);
+        fan_off_time_us += static_cast<int64_t>(FAN_ON_TIME_MS) * 1000;
+
+        // Calculate remaining time for logging
+        int64_t remaining_us = fan_off_time_us - esp_timer_get_time();
+        int64_t remaining_ms = remaining_us / 1000;
+
+        ESP_LOGI(TAG, "Added time (press %u/%lu, %lld ms remaining)",
+                 current_count,
+                 static_cast<unsigned long>(MAX_PRESS_COUNT),
+                 remaining_ms);
+
+        // Blink LED N times for N presses
+        led_controller::blink(current_count);
+    }
+
+    void handle_off_command()
+    {
+        gpio_set_level(FAN_GATE_PIN, 0);
+        fan_is_on.store(false);
+        press_count.store(0);
+        fan_off_time_us = 0;
+
+        ESP_LOGI(TAG, "Fan OFF (timer reset)");
+    }
 
     void controller_task(void* pvParameters)
     {
         FanCommand cmd;
         const TickType_t check_interval = pdMS_TO_TICKS(100);
 
-        ESP_LOGI(TAG, "Fan controller task started (auto-off after %lu ms)",
+        ESP_LOGI(TAG, "Fan controller task started (max %lu presses, %lu ms each)",
+                 static_cast<unsigned long>(MAX_PRESS_COUNT),
                  static_cast<unsigned long>(FAN_ON_TIME_MS));
 
         while (true) {
             if (xQueueReceive(cmd_queue, &cmd, check_interval) == pdTRUE) {
                 switch (cmd) {
                     case FanCommand::On:
-                        fan_controller::on();
+                        handle_on_command();
+                        break;
+                    case FanCommand::AddTime:
+                        handle_add_time_command();
                         break;
                     case FanCommand::Off:
-                        fan_controller::off();
+                        handle_off_command();
                         break;
                     case FanCommand::Shutdown:
                         ESP_LOGW(TAG, "Shutdown command received");
-                        fan_controller::off();
+                        handle_off_command();
                         break;
                 }
             }
 
             // Check for auto-off timeout
-            if (fan_is_on.load()) {
-                int64_t elapsed_us = esp_timer_get_time() - fan_on_time_us;
-                int64_t timeout_us = static_cast<int64_t>(FAN_ON_TIME_MS) * 1000;
+            if (fan_is_on.load() && fan_off_time_us > 0) {
+                int64_t now_us = esp_timer_get_time();
 
-                if (elapsed_us >= timeout_us) {
-                    ESP_LOGI(TAG, "Auto-off timer expired (%lu ms)",
-                             static_cast<unsigned long>(FAN_ON_TIME_MS));
-                    fan_controller::off();
+                if (now_us >= fan_off_time_us) {
+                    int64_t total_time_ms = static_cast<int64_t>(press_count.load()) * FAN_ON_TIME_MS;
+                    ESP_LOGI(TAG, "Auto-off timer expired (%lld ms total)", total_time_ms);
+                    handle_off_command();
                 }
             }
         }
@@ -76,6 +142,7 @@ void init()
 
     gpio_set_level(FAN_GATE_PIN, 0);
     fan_is_on.store(false);
+    press_count.store(0);
 
     ESP_LOGI(TAG, "Fan controller initialized on GPIO%d", FAN_GATE_PIN);
 }
@@ -104,19 +171,19 @@ bool is_on()
     return fan_is_on.load();
 }
 
+uint8_t get_press_count()
+{
+    return press_count.load();
+}
+
 void on()
 {
-    gpio_set_level(FAN_GATE_PIN, 1);
-    fan_is_on.store(true);
-    fan_on_time_us = esp_timer_get_time();
-    ESP_LOGI(TAG, "Fan ON");
+    handle_on_command();
 }
 
 void off()
 {
-    gpio_set_level(FAN_GATE_PIN, 0);
-    fan_is_on.store(false);
-    ESP_LOGI(TAG, "Fan OFF");
+    handle_off_command();
 }
 
 } // namespace fan_controller

@@ -5,6 +5,7 @@ idf_component_register(
         "adc_monitor.cpp"
         "button_handler.cpp"
         "fan_controller.cpp"
+        "led_controller.cpp"
     INCLUDE_DIRS "."
     REQUIRES
         driver

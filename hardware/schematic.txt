@@ -13,13 +13,15 @@ D1    | Schottky Diode         | SS14            | SMA        | 1
 R1    | Resistor               | 100k            | 0603       | 1
 R2    | Resistor               | 100k            | 0603       | 1
 R3    | Resistor               | 10k             | 0603       | 1
+R4    | Resistor               | 220             | 0603       | 1
       | (no hardware debounce - handled in software)
 SW1   | Slide/Toggle Switch    | SPST            | -          | 1
 SW2   | Tactile Switch (Fan)   | -               | 6x6mm      | 1
+LED1  | LED                    | 3mm/5mm         | TH         | 1
 BAT1  | Li-Ion Battery         | 3.7V 18650      | -          | 1
 FAN1  | DC Fan                 | 5V              | -          | 1
 
-Total: 10 components (excluding ESP32 dev board)
+Total: 12 components (excluding ESP32 dev board)
 
 
 ================================================================================
@@ -49,6 +51,7 @@ Total: 10 components (excluding ESP32 dev board)
        |  GPIO4 <-- SW2   | (Fan button)        |
        |  GPIO5 ------->--+---------------------+
        |  GPIO6 <-- ADC   | (Battery voltage)
+       |  GPIO7 --> LED1  | (Status indicator)
        |                  |
        +------------------+
 
@@ -181,7 +184,31 @@ Total: 10 components (excluding ESP32 dev board)
 
 
 ================================================================================
-                         4. BUTTON INPUT
+                         4. STATUS LED
+================================================================================
+
+    Simple LED indicator for button press feedback.
+    Blinks N times when N button presses are stacked (1-5).
+
+                    ESP32 GPIO7
+                         |
+                        +++
+                        | |
+                        | | R4 = 220 ohm (current limiter)
+                        +++
+                         |
+                         v
+                        LED1 (3mm or 5mm, any color)
+                         |
+                        GND
+
+
+    LED current: I = (3.3V - Vf) / 220 ohm ≈ 7mA (for Vf ≈ 1.8V red LED)
+    Safe for ESP32 GPIO (max 40mA per pin, 20mA recommended)
+
+
+================================================================================
+                         5. BUTTON INPUT
 ================================================================================
 
     Uses ESP32 internal pull-up. Button connects GPIO to GND.
@@ -204,7 +231,7 @@ Total: 10 components (excluding ESP32 dev board)
 
 
 ================================================================================
-                      5. COMPLETE WIRING DIAGRAM
+                      6. COMPLETE WIRING DIAGRAM
 ================================================================================
 
                               Li-Ion 3.7V (18650)
@@ -247,15 +274,20 @@ Total: 10 components (excluding ESP32 dev board)
                               |             |    |   SW2   |
                               |  GPIO6      |    +----+----+
                               |             |         |
-                              +-------------+        GND
-                                     |
-                                    GND
-                                     |
-                              Battery (-)
+                              |  GPIO7      |---+    GND
+                              |             |   |
+                              +-------------+  +++
+                                     |         | | R4 = 220
+                                    GND        +++
+                                     |          |
+                              Battery (-)       v
+                                              LED1
+                                                |
+                                               GND
 
 
 ================================================================================
-                         6. ESP32-S3 PIN SUMMARY
+                         7. ESP32-S3 PIN SUMMARY
 ================================================================================
 
     +------------------+
@@ -273,11 +305,13 @@ Total: 10 components (excluding ESP32 dev board)
     |                  |
     |  GPIO6 o---------+----- Voltage divider (VBAT × 0.5)
     |                  |
+    |  GPIO7 o---------+----- Status LED (via R4 220 ohm to GND)
+    |                  |
     +------------------+
 
 
 ================================================================================
-                           7. DEEP SLEEP NOTES
+                           8. DEEP SLEEP NOTES
 ================================================================================
 
     When battery < 3.0V:
@@ -294,12 +328,14 @@ Total: 10 components (excluding ESP32 dev board)
 
 
 ================================================================================
-                         8. ASSEMBLY CHECKLIST
+                         9. ASSEMBLY CHECKLIST
 ================================================================================
 
     [ ] Solder R1 (100k) between VBAT and GPIO6
     [ ] Solder R2 (100k) between GPIO6 and GND
     [ ] Solder R3 (10k) between GPIO5 and GND
+    [ ] Solder R4 (220 ohm) between GPIO7 and LED anode
+    [ ] Connect LED1: Anode to R4, Cathode to GND
     [ ] Connect MOSFET: G to GPIO5, S to GND, D to Fan(-)
     [ ] Connect diode D1: Cathode (stripe) to VBAT, Anode to Fan(-)
     [ ] Connect Fan(+) to VBAT
@@ -314,6 +350,7 @@ Total: 10 components (excluding ESP32 dev board)
     2. Check 3.3V on ESP32 3V3 pin
     3. Measure voltage on GPIO6 (should be VBAT × 0.5)
     4. Check GPIO5 is LOW (~0V)
+    5. Check GPIO7 is LOW (~0V), LED off
 
 
 ================================================================================

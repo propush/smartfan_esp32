@@ -2,6 +2,7 @@
 #define FAN_CONTROLLER_HPP
 
 #include "config.hpp"
+#include <cstdint>
 
 namespace fan_controller {
 
@@ -26,6 +27,11 @@ void send_cmd(FanCommand cmd);
  * Check if the fan is currently on.
  */
 bool is_on();
+
+/**
+ * Get current press count (1-5, or 0 if fan is off).
+ */
+uint8_t get_press_count();
 
 /**
  * Turn fan on directly (bypasses queue).

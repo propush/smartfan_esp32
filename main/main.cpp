@@ -8,6 +8,7 @@
 #include "adc_monitor.hpp"
 #include "button_handler.hpp"
 #include "fan_controller.hpp"
+#include "led_controller.hpp"
 
 namespace {
     const char* TAG = "main";
@@ -33,6 +34,7 @@ extern "C" void app_main()
     ESP_LOGI(TAG, "Initializing subsystems...");
 
     fan_controller::init();
+    led_controller::init();
     adc_monitor::init();
     button_handler::init();
 
@@ -57,8 +59,12 @@ extern "C" void app_main()
 
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "System ready!");
-    ESP_LOGI(TAG, "  - Press button (GPIO%d) to run fan for %lu seconds",
-             BUTTON_PIN, static_cast<unsigned long>(FAN_ON_TIME_MS / 1000));
+    ESP_LOGI(TAG, "  - Short press: start fan (%lu s), stack up to %lu presses",
+             static_cast<unsigned long>(FAN_ON_TIME_MS / 1000),
+             static_cast<unsigned long>(MAX_PRESS_COUNT));
+    ESP_LOGI(TAG, "  - Long press (>%lu ms): stop fan",
+             static_cast<unsigned long>(LONG_PRESS_TIME_MS));
+    ESP_LOGI(TAG, "  - LED blinks N times for N presses");
     ESP_LOGI(TAG, "  - Battery monitor: every %lu seconds",
              static_cast<unsigned long>(ADC_INTERVAL_MS / 1000));
     ESP_LOGI(TAG, "  - Low battery cutoff: %lu mV (enters deep sleep)",

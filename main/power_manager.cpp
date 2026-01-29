@@ -37,16 +37,48 @@ void init()
             ESP_LOGI(TAG, "Wake cause: %d", cause);
             break;
     }
+
+    // If waking from deep sleep, restore GPIOs that were isolated
+    if (woke_from_deep_sleep()) {
+        ESP_LOGI(TAG, "Restoring isolated GPIOs after deep sleep wake");
+
+        // rtc_gpio_isolate() enables hold - we must disable it first
+        // Then de-initialize RTC GPIO mode to allow normal GPIO operation
+        if (rtc_gpio_is_valid_gpio(FAN_GATE_PIN)) {
+            rtc_gpio_hold_dis(FAN_GATE_PIN);
+            rtc_gpio_deinit(FAN_GATE_PIN);
+        }
+        if (rtc_gpio_is_valid_gpio(LED_PIN)) {
+            rtc_gpio_hold_dis(LED_PIN);
+            rtc_gpio_deinit(LED_PIN);
+        }
+        if (rtc_gpio_is_valid_gpio(BATTERY_ADC_PIN)) {
+            rtc_gpio_hold_dis(BATTERY_ADC_PIN);
+            rtc_gpio_deinit(BATTERY_ADC_PIN);
+        }
+    }
 }
 
 [[noreturn]] void enter_deep_sleep()
 {
     ESP_LOGW(TAG, "Entering deep sleep - press button to wake");
 
-    // Isolate GPIO to minimize current draw
-    // Keep BUTTON_PIN active for wake-up
-    rtc_gpio_isolate(FAN_GATE_PIN);
-    rtc_gpio_isolate(BATTERY_ADC_PIN);
+    // Ensure outputs are LOW before isolating
+    gpio_set_level(FAN_GATE_PIN, 0);
+    gpio_set_level(LED_PIN, 0);
+
+    // Isolate all output GPIOs to minimize current draw
+    // This puts them in high-impedance state during sleep
+    // Keep BUTTON_PIN active for wake-up (not isolated)
+    if (rtc_gpio_is_valid_gpio(FAN_GATE_PIN)) {
+        rtc_gpio_isolate(FAN_GATE_PIN);
+    }
+    if (rtc_gpio_is_valid_gpio(LED_PIN)) {
+        rtc_gpio_isolate(LED_PIN);
+    }
+    if (rtc_gpio_is_valid_gpio(BATTERY_ADC_PIN)) {
+        rtc_gpio_isolate(BATTERY_ADC_PIN);
+    }
 
     // Small delay to allow log to flush
     vTaskDelay(pdMS_TO_TICKS(100));
