@@ -1,0 +1,319 @@
+================================================================================
+                    ESP32-S3 BATTERY-POWERED FAN CONTROLLER
+                         SIMPLIFIED HARDWARE SCHEMATIC
+================================================================================
+
+BILL OF MATERIALS
+-----------------
+Ref   | Component              | Value/Part      | Package    | Qty
+------|------------------------|-----------------|------------|----
+U1    | ESP32-S3 DevKit        | ESP32-S3-WROOM  | Module     | 1
+Q1    | N-MOSFET (Fan)         | Si2302CDS       | SOT-23     | 1
+D1    | Schottky Diode         | SS14            | SMA        | 1
+R1    | Resistor               | 100k            | 0603       | 1
+R2    | Resistor               | 100k            | 0603       | 1
+R3    | Resistor               | 10k             | 0603       | 1
+      | (no hardware debounce - handled in software)
+SW1   | Slide/Toggle Switch    | SPST            | -          | 1
+SW2   | Tactile Switch (Fan)   | -               | 6x6mm      | 1
+BAT1  | Li-Ion Battery         | 3.7V 18650      | -          | 1
+FAN1  | DC Fan                 | 5V              | -          | 1
+
+Total: 10 components (excluding ESP32 dev board)
+
+
+================================================================================
+                           SYSTEM BLOCK DIAGRAM
+================================================================================
+
+    Li-Ion Battery (3.0-4.2V)
+           |
+           |
+      [ SW1 SPST ]  <-- Mechanical ON/OFF switch
+           |
+           +------------- VBAT
+           |
+           +-------+----------------------------+
+           |       |                            |
+           |       |                            |
+      [ Voltage ]  |                       [ N-MOSFET ]
+      [ Divider ]  |                       [ + Fan   ]
+           |       |                            |
+           v       v                            ^
+                                                |
+       +------------------+                     |
+       |    ESP32-S3      |                     |
+       |                  |                     |
+       |  3V3 <--- VIN    |                     |
+       |                  |                     |
+       |  GPIO4 <-- SW2   | (Fan button)        |
+       |  GPIO5 ------->--+---------------------+
+       |  GPIO6 <-- ADC   | (Battery voltage)
+       |                  |
+       +------------------+
+
+    Low battery → ESP32 turns off fan → enters deep sleep
+    Wake up → button press (GPIO4) or timer
+
+
+================================================================================
+                        1. POWER CIRCUIT (SIMPLE)
+================================================================================
+
+    Mechanical switch directly controls power. No software latch needed.
+
+                    Li-Ion Battery
+                    3.0V - 4.2V
+                         |
+                         |
+                    +----+----+
+                    |   SW1   |   <-- Slide switch or toggle (SPST)
+                    | (Power) |       Physically disconnects battery
+                    +----+----+
+                         |
+                         |
+                       VBAT ----+---- To voltage divider (R1)
+                         |      |
+                         |      +---- To fan circuit (FAN+)
+                         |
+                    ESP32-S3 VIN (or 5V pin)
+                         |
+                    Internal LDO
+                         |
+                        3V3
+
+
+    NOTE: Most ESP32-S3 dev boards have onboard LDO that accepts
+    3.3V-5V input. Check your board's specifications.
+
+    If using bare ESP32-S3 module, add external 3.3V LDO (AMS1117-3.3 or similar).
+
+
+================================================================================
+                    2. BATTERY VOLTAGE MONITORING
+================================================================================
+
+    Voltage divider scales battery voltage for ESP32 ADC.
+
+    V_ADC = VBAT × R2 / (R1 + R2) = VBAT × 100k / 200k = VBAT × 0.5
+
+                        VBAT
+                         |
+                        +++
+                        | |
+                        | | R1 = 100k
+                        | |
+                        +++
+                         |
+                         +-------------> ESP32 GPIO6 (ADC1_CH5)
+                         |
+                        +++
+                        | |
+                        | | R2 = 100k
+                        | |
+                        +++
+                         |
+                        GND
+
+
+    VOLTAGE TABLE:
+
+    VBAT (V)  |  V_ADC (V)  |  ADC Raw (~)  |  Status
+    ----------|-------------|---------------|----------
+    4.20      |  2.10       |  ~2730        |  Full
+    3.70      |  1.85       |  ~2400        |  Nominal
+    3.50      |  1.75       |  ~2275        |  Low
+    3.00      |  1.50       |  ~1950        |  Cutoff → Deep sleep
+
+    Software formula: VBAT_mV = ADC_voltage_mV × 2.0
+
+
+================================================================================
+                        3. N-MOSFET FAN DRIVER
+================================================================================
+
+    Low-side switch. Fan between VBAT and MOSFET drain.
+
+                        VBAT
+                         |
+                  +------+------+
+                  |             |
+                  |    FAN1     |
+                  |   (5V DC)   |
+                  +------+------+
+                         |
+                 +-------+-------+
+                 |               |
+                 |   +-------+   |
+               __|__ |       |   |
+               \   / |  D1   |   |
+                \ /  | SS14  |   |  Flyback diode
+               __|__ |       |   |  (cathode/stripe to VBAT)
+                 |   +-------+   |
+                 |       |       |
+                 +-------+-------+
+                         |
+                         D (Drain)
+                         |
+                   Q1: Si2302CDS
+                     (N-MOSFET)
+                         |
+                    G ---+--- S
+                    |         |
+                   +++       GND
+                   | |
+                   | | R3 = 10k (pull-down)
+                   +++
+                    |
+                    +---------> ESP32 GPIO5
+
+
+    Si2302CDS PINOUT (SOT-23, top view):
+
+         +-------+
+    G   1|  o    |3  D
+         |       |
+    S   2|       |
+         +-------+
+
+    R3 keeps gate LOW when GPIO5 is floating (during boot/sleep)
+    D1 protects MOSFET from back-EMF when motor stops
+
+
+================================================================================
+                         4. BUTTON INPUT
+================================================================================
+
+    Uses ESP32 internal pull-up. Button connects GPIO to GND.
+    Can also wake ESP32 from deep sleep.
+
+                    ESP32 GPIO4
+                         |
+                         | (internal pull-up enabled in software)
+                         |
+                    +----+----+
+                    |   SW2   |
+                    |  (Fan)  |
+                    +----+----+
+                         |
+                        GND
+
+
+    Debounce is handled in software (50ms debounce time in config.hpp).
+    No external capacitor needed.
+
+
+================================================================================
+                      5. COMPLETE WIRING DIAGRAM
+================================================================================
+
+                              Li-Ion 3.7V (18650)
+                                    (+)
+                                     |
+                                +----+----+
+                                |   SW1   |  Power switch (SPST)
+                                +----+----+
+                                     |
+                                   VBAT
+                                     |
+         +---------------------------+---------------------------+
+         |                           |                           |
+         |                           |                           |
+        +++                          |                      +----+----+
+        | |                          |                      |  FAN1   |
+        | | R1 = 100k                |                      +---------+
+        +++                          |                           |
+         |                           |                    +------+------+
+         +-------> GPIO6             |                    |      |      |
+         |                           |                  __|__  +---+  __|__
+        +++                          |                  \   /  |D1 |    |
+        | |                          |                   \ /   +---+    D
+        | | R2 = 100k                |                  __|__    |      |
+        +++                          |                    |      |     Q1
+         |                           |                    +------+      |
+        GND                          |                           G------+--- GPIO5
+                                     |                           |
+                                     |                          +++
+                                     |                          | | R3 = 10k
+                              ESP32-S3 DevKit                   +++
+                                     |                           |
+                              +------+------+                   GND
+                              |             |
+                              |  VIN   GND  |
+                              |             |
+                              |  GPIO4      |----+
+                              |             |    |
+                              |  GPIO5      |    +----+----+
+                              |             |    |   SW2   |
+                              |  GPIO6      |    +----+----+
+                              |             |         |
+                              +-------------+        GND
+                                     |
+                                    GND
+                                     |
+                              Battery (-)
+
+
+================================================================================
+                         6. ESP32-S3 PIN SUMMARY
+================================================================================
+
+    +------------------+
+    |    ESP32-S3      |
+    |    DevKit        |
+    |                  |
+    |  VIN  o----------+----- VBAT (3.0-4.2V via SW1)
+    |                  |
+    |  GND  o----------+----- Battery (-) / Common GND
+    |                  |
+    |  GPIO4 o---------+----- Button SW2 (to GND, internal pull-up)
+    |                  |      Also: deep sleep wake source
+    |                  |
+    |  GPIO5 o---------+----- MOSFET gate (via R3 pull-down)
+    |                  |
+    |  GPIO6 o---------+----- Voltage divider (VBAT × 0.5)
+    |                  |
+    +------------------+
+
+
+================================================================================
+                           7. DEEP SLEEP NOTES
+================================================================================
+
+    When battery < 3.0V:
+    1. Turn off fan (GPIO5 LOW)
+    2. Enter deep sleep
+    3. Wake on GPIO4 button press (EXT0 wake source)
+
+    Deep sleep current: ~10µA (ESP32-S3)
+
+    This protects the Li-Ion cell from over-discharge while
+    allowing wake-up when user presses button.
+
+    Code sets GPIO4 as EXT0 wake source (wake on LOW level).
+
+
+================================================================================
+                         8. ASSEMBLY CHECKLIST
+================================================================================
+
+    [ ] Solder R1 (100k) between VBAT and GPIO6
+    [ ] Solder R2 (100k) between GPIO6 and GND
+    [ ] Solder R3 (10k) between GPIO5 and GND
+    [ ] Connect MOSFET: G to GPIO5, S to GND, D to Fan(-)
+    [ ] Connect diode D1: Cathode (stripe) to VBAT, Anode to Fan(-)
+    [ ] Connect Fan(+) to VBAT
+    [ ] Connect button SW2 between GPIO4 and GND
+    [ ] Connect power switch SW1 in series with battery (+)
+    [ ] Connect VBAT to ESP32 VIN
+    [ ] Connect GND to ESP32 GND
+
+
+    QUICK TEST (without fan):
+    1. Turn on SW1
+    2. Check 3.3V on ESP32 3V3 pin
+    3. Measure voltage on GPIO6 (should be VBAT × 0.5)
+    4. Check GPIO5 is LOW (~0V)
+
+
+================================================================================
