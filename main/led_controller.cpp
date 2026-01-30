@@ -47,6 +47,26 @@ void blink(uint8_t count)
     }
 }
 
+void blink_low_battery()
+{
+    ESP_LOGI(TAG, "Blinking low battery warning pattern (5 quick blinks)");
+
+    // 5 quick blinks (150ms on, 150ms off)
+    for (int i = 0; i < 5; i++) {
+        gpio_set_level(LED_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(LED_BLINK_ON_MS));
+        gpio_set_level(LED_PIN, 0);
+
+        // Add off-delay between blinks (but not after last blink)
+        if (i < 4) {
+            vTaskDelay(pdMS_TO_TICKS(LED_BLINK_OFF_MS));
+        }
+    }
+
+    // Add a longer pause after the warning pattern
+    vTaskDelay(pdMS_TO_TICKS(1000));
+}
+
 void on()
 {
     gpio_set_level(LED_PIN, 1);

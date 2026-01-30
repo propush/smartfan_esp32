@@ -19,6 +19,11 @@ void init();
 void blink(uint8_t count);
 
 /**
+ * Blink the LED with low battery warning pattern (5 quick blinks).
+ */
+void blink_low_battery();
+
+/**
  * Turn LED on.
  */
 void on();

@@ -8,7 +8,8 @@ A simple battery-powered fan controller that:
 - Long press (>1s) stops fan immediately
 - LED blinks N times to indicate N stacked presses
 - Monitors battery voltage via ADC
-- Enters deep sleep when battery is low (<3.0V) to protect the cell
+- LED blinks 5× when battery is low (<3.2V) as warning
+- Enters deep sleep when battery is critical (<3.0V) to protect the cell
 - Wakes from deep sleep on button press
 
 ## Hardware Configuration
@@ -88,6 +89,7 @@ VBAT = V_ADC × 2.0
 |---------|-------------|--------|
 | 4.2V | 2.10V | Full |
 | 3.7V | 1.85V | Nominal |
+| 3.2V | 1.60V | Warning → LED blinks 5× |
 | 3.0V | 1.50V | Cutoff → Deep Sleep |
 
 ## Software Configuration
@@ -116,7 +118,8 @@ LED_BLINK_ON_MS    = 150     // LED on duration per blink
 LED_BLINK_OFF_MS   = 150     // LED off duration between blinks
 
 // Battery
-LOW_BATTERY_MV     = 3000    // 3.0V cutoff
+LOW_BATTERY_MV     = 3000    // 3.0V cutoff → deep sleep
+WARNING_BATTERY_MV = 3200    // 3.2V warning → LED blinks 5×
 FULL_BATTERY_MV    = 4200    // 4.2V full
 
 // Voltage divider ratio (100k/100k)
@@ -147,7 +150,7 @@ main/
 | Task | Stack | Priority | Function |
 |------|-------|----------|----------|
 | adc_monitor | 4096 | 2 | Read battery voltage every 5s |
-| button_handler | 2048 | 3 | Handle button interrupts, detect long press |
+| button_handler | 4096 | 3 | Handle button interrupts, detect long press |
 | fan_controller | 4096 | 2 | Control fan, timer stacking, LED feedback |
 
 ### Behavior
@@ -158,8 +161,9 @@ main/
    - If fan on: Add 30s (up to 5 presses max), LED blinks N× for N presses
 3. **Long Press** (hold >1s): Stop fan immediately, reset timer
 4. **Auto-Off**: Fan turns off when timer expires
-5. **Low Battery**: When VBAT < 3.0V, fan off, enter deep sleep
-6. **Wake Up**: Button press wakes ESP32 from deep sleep
+5. **Low Battery Warning**: When VBAT < 3.2V, LED blinks 5× as warning
+6. **Low Battery Shutdown**: When VBAT < 3.0V, fan off, enter deep sleep
+7. **Wake Up**: Button press wakes ESP32 from deep sleep
 
 ### Button Behavior Summary
 
@@ -220,6 +224,7 @@ REQUIRES
 - [ ] Press 6th time, verify no response (max reached)
 - [ ] Long press (>1s), verify fan stops immediately
 - [ ] Wait for timer to expire, verify auto-off
+- [ ] Reduce battery to ~3.1V, verify LED blinks 5× (low battery warning)
 - [ ] Reduce battery to <3V, verify deep sleep
 - [ ] Press button in deep sleep, verify wake-up
 

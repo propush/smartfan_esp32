@@ -2,6 +2,7 @@
 #include "config.hpp"
 #include "power_manager.hpp"
 #include "fan_controller.hpp"
+#include "led_controller.hpp"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
@@ -68,17 +69,27 @@ namespace {
             voltage = adc_monitor::read_voltage_mv();
             ESP_LOGI(TAG, "Battery voltage: %lu mV", static_cast<unsigned long>(voltage));
 
-            if (voltage < LOW_BATTERY_MV && voltage > 0) {
-                ESP_LOGW(TAG, "Low battery detected! (%lu mV < %lu mV)",
+            if (voltage < WARNING_BATTERY_MV && voltage > 0) {
+                ESP_LOGW(TAG, "Low battery warning! (%lu mV < %lu mV)",
                          static_cast<unsigned long>(voltage),
-                         static_cast<unsigned long>(LOW_BATTERY_MV));
+                         static_cast<unsigned long>(WARNING_BATTERY_MV));
 
-                // Turn off fan before sleeping
-                fan_controller::send_cmd(FanCommand::Shutdown);
-                vTaskDelay(pdMS_TO_TICKS(100));
+                // Trigger low battery LED warning pattern
+                led_controller::blink_low_battery(); // 5 quick blinks for warning
 
-                // Enter deep sleep to conserve power
-                power_manager::enter_deep_sleep();
+                // Check if we're below shutdown threshold
+                if (voltage < LOW_BATTERY_MV && voltage > 0) {
+                    ESP_LOGW(TAG, "Battery voltage too low for operation! (%lu mV < %lu mV)",
+                             static_cast<unsigned long>(voltage),
+                             static_cast<unsigned long>(LOW_BATTERY_MV));
+
+                    // Turn off fan before deep sleep
+                    fan_controller::send_cmd(FanCommand::Shutdown);
+                    vTaskDelay(pdMS_TO_TICKS(100));
+
+                    // Enter deep sleep to conserve power
+                    power_manager::enter_deep_sleep();
+                }
             }
         }
     }

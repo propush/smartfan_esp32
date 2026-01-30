@@ -22,8 +22,9 @@ constexpr adc_channel_t BATTERY_ADC_CHANNEL = ADC_CHANNEL_5; // GPIO6 on ESP32-S
 constexpr float VOLTAGE_DIVIDER_RATIO = 2.0f;
 
 // Battery Thresholds (in millivolts)
-constexpr uint32_t LOW_BATTERY_MV = 3000;  // 3.0V cutoff - enter deep sleep below this
-constexpr uint32_t FULL_BATTERY_MV = 4200; // 4.2V full charge
+constexpr uint32_t LOW_BATTERY_MV = 3000;     // 3.0V cutoff - enter deep sleep below this
+constexpr uint32_t WARNING_BATTERY_MV = 3200; // 3.2V warning threshold - alert before shutdown
+constexpr uint32_t FULL_BATTERY_MV = 4200;    // 4.2V full charge
 
 // Timing Configuration
 constexpr uint32_t FAN_ON_TIME_MS = 30000; // Fan runs for 30 seconds per press
@@ -45,7 +46,7 @@ constexpr uint32_t LED_BLINK_OFF_MS = 150; // LED off duration between blinks
 constexpr uint32_t ADC_TASK_STACK_SIZE = 4096;
 constexpr UBaseType_t ADC_TASK_PRIORITY = 2;
 
-constexpr uint32_t BUTTON_TASK_STACK_SIZE = 2048;
+constexpr uint32_t BUTTON_TASK_STACK_SIZE = 4096;
 constexpr UBaseType_t BUTTON_TASK_PRIORITY = 3;
 
 constexpr uint32_t FAN_TASK_STACK_SIZE = 4096;
