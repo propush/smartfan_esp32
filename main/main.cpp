@@ -19,8 +19,18 @@ extern "C" void app_main()
     ESP_LOGI(TAG, "ESP32-S3 Fan Controller Starting");
     ESP_LOGI(TAG, "========================================");
 
+    // Validate configuration
+    if (!Config::validate()) {
+        ESP_LOGE(TAG, "Configuration validation failed!");
+        // Continue execution but log error
+    }
+
     // Initialize power manager (sets up deep sleep wake source)
-    power_manager::init();
+    esp_err_t err = power_manager::init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize power manager: %s", esp_err_to_name(err));
+        // Continue execution but log error
+    }
 
     // Initialize NVS (required by some ESP-IDF components)
     esp_err_t ret = nvs_flash_init();
@@ -33,17 +43,36 @@ extern "C" void app_main()
     // Initialize all subsystems
     ESP_LOGI(TAG, "Initializing subsystems...");
 
-    fan_controller::init();
-    led_controller::init();
-    adc_monitor::init();
-    button_handler::init();
+    err = fan_controller::init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize fan controller: %s", esp_err_to_name(err));
+        // Continue execution but log error
+    }
+
+    err = led_controller::init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize LED controller: %s", esp_err_to_name(err));
+        // Continue execution but log error
+    }
+
+    err = adc_monitor::init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize ADC monitor: %s", esp_err_to_name(err));
+        // Continue execution but log error
+    }
+
+    err = button_handler::init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize button handler: %s", esp_err_to_name(err));
+        // Continue execution but log error
+    }
 
     // Log initial battery voltage
     uint32_t voltage = adc_monitor::read_voltage_mv();
     ESP_LOGI(TAG, "Initial battery voltage: %lu mV", static_cast<unsigned long>(voltage));
 
     // Check battery on startup
-    if (voltage < LOW_BATTERY_MV && voltage > 0) {
+    if (voltage < Config::LOW_BATTERY_MV && voltage > 0) {
         ESP_LOGW(TAG, "Battery voltage too low for operation!");
         ESP_LOGW(TAG, "Entering deep sleep to protect battery...");
         vTaskDelay(pdMS_TO_TICKS(500));
@@ -60,14 +89,14 @@ extern "C" void app_main()
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "System ready!");
     ESP_LOGI(TAG, "  - Short press: start fan (%lu s), stack up to %lu presses",
-             static_cast<unsigned long>(FAN_ON_TIME_MS / 1000),
-             static_cast<unsigned long>(MAX_PRESS_COUNT));
+             static_cast<unsigned long>(Config::FAN_ON_TIME_MS / 1000),
+             static_cast<unsigned long>(Config::MAX_PRESS_COUNT));
     ESP_LOGI(TAG, "  - Long press (>%lu ms): stop fan",
-             static_cast<unsigned long>(LONG_PRESS_TIME_MS));
+             static_cast<unsigned long>(Config::LONG_PRESS_TIME_MS));
     ESP_LOGI(TAG, "  - LED blinks N times for N presses");
     ESP_LOGI(TAG, "  - Battery monitor: every %lu seconds",
-             static_cast<unsigned long>(ADC_INTERVAL_MS / 1000));
+             static_cast<unsigned long>(Config::ADC_INTERVAL_MS / 1000));
     ESP_LOGI(TAG, "  - Low battery cutoff: %lu mV (enters deep sleep)",
-             static_cast<unsigned long>(LOW_BATTERY_MV));
+             static_cast<unsigned long>(Config::LOW_BATTERY_MV));
     ESP_LOGI(TAG, "========================================");
 }

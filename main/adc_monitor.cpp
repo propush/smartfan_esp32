@@ -7,6 +7,7 @@
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_log.h"
+#include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <atomic>
@@ -27,9 +28,9 @@ namespace {
 #if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
         adc_cali_curve_fitting_config_t cali_config = {
             .unit_id = ADC_UNIT_1,
-            .chan = BATTERY_ADC_CHANNEL,
-            .atten = ADC_ATTEN,
-            .bitwidth = ADC_WIDTH,
+            .chan = Config::BATTERY_ADC_CHANNEL,
+            .atten = Config::ADC_ATTEN,
+            .bitwidth = Config::ADC_WIDTH,
         };
         ret = adc_cali_create_scheme_curve_fitting(&cali_config, &cali_handle);
         if (ret == ESP_OK) {
@@ -39,8 +40,8 @@ namespace {
 #elif ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
         adc_cali_line_fitting_config_t cali_config = {
             .unit_id = ADC_UNIT_1,
-            .atten = ADC_ATTEN,
-            .bitwidth = ADC_WIDTH,
+            .atten = Config::ADC_ATTEN,
+            .bitwidth = Config::ADC_WIDTH,
         };
         ret = adc_cali_create_scheme_line_fitting(&cali_config, &cali_handle);
         if (ret == ESP_OK) {
@@ -64,27 +65,30 @@ namespace {
         ESP_LOGI(TAG, "Initial battery voltage: %lu mV", static_cast<unsigned long>(voltage));
 
         while (true) {
-            vTaskDelay(pdMS_TO_TICKS(ADC_INTERVAL_MS));
+            vTaskDelay(pdMS_TO_TICKS(Config::ADC_INTERVAL_MS));
 
             voltage = adc_monitor::read_voltage_mv();
             ESP_LOGI(TAG, "Battery voltage: %lu mV", static_cast<unsigned long>(voltage));
 
-            if (voltage < WARNING_BATTERY_MV && voltage > 0) {
+            if (voltage < Config::WARNING_BATTERY_MV && voltage > 0) {
                 ESP_LOGW(TAG, "Low battery warning! (%lu mV < %lu mV)",
                          static_cast<unsigned long>(voltage),
-                         static_cast<unsigned long>(WARNING_BATTERY_MV));
+                         static_cast<unsigned long>(Config::WARNING_BATTERY_MV));
 
                 // Trigger low battery LED warning pattern
                 led_controller::blink_low_battery(); // 5 quick blinks for warning
 
                 // Check if we're below shutdown threshold
-                if (voltage < LOW_BATTERY_MV && voltage > 0) {
+                if (voltage < Config::LOW_BATTERY_MV && voltage > 0) {
                     ESP_LOGW(TAG, "Battery voltage too low for operation! (%lu mV < %lu mV)",
                              static_cast<unsigned long>(voltage),
-                             static_cast<unsigned long>(LOW_BATTERY_MV));
+                             static_cast<unsigned long>(Config::LOW_BATTERY_MV));
 
                     // Turn off fan before deep sleep
-                    fan_controller::send_cmd(FanCommand::Shutdown);
+                    esp_err_t err = fan_controller::send_cmd(Config::FanCommand::Shutdown);
+                    if (err != ESP_OK) {
+                        ESP_LOGW(TAG, "Failed to send shutdown command to fan controller: %s", esp_err_to_name(err));
+                    }
                     vTaskDelay(pdMS_TO_TICKS(100));
 
                     // Enter deep sleep to conserve power
@@ -97,35 +101,56 @@ namespace {
 
 namespace adc_monitor {
 
-void init()
+esp_err_t init()
 {
+    // Check if ADC is already initialized
+    if (adc_handle != nullptr) {
+        ESP_LOGW(TAG, "ADC monitor already initialized");
+        return ESP_OK;
+    }
+
     adc_oneshot_unit_init_cfg_t init_config = {
         .unit_id = ADC_UNIT_1,
         .clk_src = ADC_RTC_CLK_SRC_DEFAULT,
         .ulp_mode = ADC_ULP_MODE_DISABLE,
     };
-    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config, &adc_handle));
+    esp_err_t err = adc_oneshot_new_unit(&init_config, &adc_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create ADC unit: %s", esp_err_to_name(err));
+        return err;
+    }
 
     adc_oneshot_chan_cfg_t config = {
-        .atten = ADC_ATTEN,
-        .bitwidth = ADC_WIDTH,
+        .atten = Config::ADC_ATTEN,
+        .bitwidth = Config::ADC_WIDTH,
     };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc_handle, BATTERY_ADC_CHANNEL, &config));
+    err = adc_oneshot_config_channel(adc_handle, Config::BATTERY_ADC_CHANNEL, &config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to configure ADC channel: %s", esp_err_to_name(err));
+        return err;
+    }
 
     calibration_enabled = init_calibration();
 
     ESP_LOGI(TAG, "ADC monitor initialized on GPIO%d (ADC1_CH%d)",
-             BATTERY_ADC_PIN, BATTERY_ADC_CHANNEL);
+             Config::BATTERY_ADC_PIN, Config::BATTERY_ADC_CHANNEL);
+
+    return ESP_OK;
 }
 
 void start()
 {
+    if (adc_handle == nullptr) {
+        ESP_LOGE(TAG, "ADC not initialized, cannot start monitor task");
+        return;
+    }
+
     xTaskCreate(
         monitor_task,
         "adc_monitor",
-        ADC_TASK_STACK_SIZE,
+        Config::ADC_TASK_STACK_SIZE,
         nullptr,
-        ADC_TASK_PRIORITY,
+        Config::ADC_TASK_PRIORITY,
         nullptr
     );
 }
@@ -135,7 +160,12 @@ uint32_t read_voltage_mv()
     int raw_value = 0;
     int voltage_mv = 0;
 
-    esp_err_t ret = adc_oneshot_read(adc_handle, BATTERY_ADC_CHANNEL, &raw_value);
+    if (adc_handle == nullptr) {
+        ESP_LOGE(TAG, "ADC not initialized, cannot read voltage");
+        return last_voltage_mv.load();
+    }
+
+    esp_err_t ret = adc_oneshot_read(adc_handle, Config::BATTERY_ADC_CHANNEL, &raw_value);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "ADC read failed: %s", esp_err_to_name(ret));
         return last_voltage_mv.load();
@@ -151,7 +181,7 @@ uint32_t read_voltage_mv()
         voltage_mv = (raw_value * 2500) / 4095;
     }
 
-    uint32_t battery_mv = static_cast<uint32_t>(voltage_mv * VOLTAGE_DIVIDER_RATIO);
+    uint32_t battery_mv = static_cast<uint32_t>(voltage_mv * Config::VOLTAGE_DIVIDER_RATIO);
     last_voltage_mv.store(battery_mv);
 
     return battery_mv;

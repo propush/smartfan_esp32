@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "main.cpp"
+        "config.cpp"
         "power_manager.cpp"
         "adc_monitor.cpp"
         "button_handler.cpp"

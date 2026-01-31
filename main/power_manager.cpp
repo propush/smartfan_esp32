@@ -9,75 +9,98 @@
 
 namespace {
     const char* TAG = "power_manager";
+    bool was_woken_from_deep_sleep = false;
+
+    // Function to measure current draw during sleep
+    uint32_t measure_current_draw()
+    {
+        // This would typically involve reading a current sensing pin or using
+        // the internal ADC to measure voltage across a shunt resistor
+        // For now, return a placeholder value
+        return 0;
+    }
 }
 
 namespace power_manager {
 
-void init()
+esp_err_t init()
 {
     // Configure button pin as RTC GPIO for deep sleep wake
     // ESP32-S3: GPIO4 is RTC_GPIO4
-    esp_sleep_enable_ext0_wakeup(BUTTON_PIN, 0);  // Wake on LOW level
+    esp_err_t err = esp_sleep_enable_ext0_wakeup(Config::BUTTON_PIN, 0);  // Wake on LOW level
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to enable deep sleep wake on GPIO%d: %s",
+                 Config::BUTTON_PIN, esp_err_to_name(err));
+        return err;
+    }
 
-    ESP_LOGI(TAG, "Power manager initialized (deep sleep wake on GPIO%d)", BUTTON_PIN);
+    ESP_LOGI(TAG, "Power manager initialized (deep sleep wake on GPIO%d)", Config::BUTTON_PIN);
 
     // Log wake-up cause
     auto cause = get_wakeup_cause();
     switch (cause) {
         case ESP_SLEEP_WAKEUP_EXT0:
             ESP_LOGI(TAG, "Woke up from button press");
+            was_woken_from_deep_sleep = true;
             break;
         case ESP_SLEEP_WAKEUP_TIMER:
             ESP_LOGI(TAG, "Woke up from timer");
+            was_woken_from_deep_sleep = false;
             break;
         case ESP_SLEEP_WAKEUP_UNDEFINED:
             ESP_LOGI(TAG, "Power-on reset (not from deep sleep)");
+            was_woken_from_deep_sleep = false;
             break;
         default:
             ESP_LOGI(TAG, "Wake cause: %d", cause);
+            was_woken_from_deep_sleep = false;
             break;
     }
 
     // If waking from deep sleep, restore GPIOs that were isolated
     if (woke_from_deep_sleep()) {
         ESP_LOGI(TAG, "Restoring isolated GPIOs after deep sleep wake");
+        ESP_LOGI(TAG, "Current draw before restoration: %lu uA", static_cast<unsigned long>(measure_current_draw()));
 
         // rtc_gpio_isolate() enables hold - we must disable it first
         // Then de-initialize RTC GPIO mode to allow normal GPIO operation
-        if (rtc_gpio_is_valid_gpio(FAN_GATE_PIN)) {
-            rtc_gpio_hold_dis(FAN_GATE_PIN);
-            rtc_gpio_deinit(FAN_GATE_PIN);
+        if (rtc_gpio_is_valid_gpio(Config::FAN_GATE_PIN)) {
+            rtc_gpio_hold_dis(Config::FAN_GATE_PIN);
+            rtc_gpio_deinit(Config::FAN_GATE_PIN);
         }
-        if (rtc_gpio_is_valid_gpio(LED_PIN)) {
-            rtc_gpio_hold_dis(LED_PIN);
-            rtc_gpio_deinit(LED_PIN);
+        if (rtc_gpio_is_valid_gpio(Config::LED_PIN)) {
+            rtc_gpio_hold_dis(Config::LED_PIN);
+            rtc_gpio_deinit(Config::LED_PIN);
         }
-        if (rtc_gpio_is_valid_gpio(BATTERY_ADC_PIN)) {
-            rtc_gpio_hold_dis(BATTERY_ADC_PIN);
-            rtc_gpio_deinit(BATTERY_ADC_PIN);
+        if (rtc_gpio_is_valid_gpio(Config::BATTERY_ADC_PIN)) {
+            rtc_gpio_hold_dis(Config::BATTERY_ADC_PIN);
+            rtc_gpio_deinit(Config::BATTERY_ADC_PIN);
         }
     }
+
+    return ESP_OK;
 }
 
 [[noreturn]] void enter_deep_sleep()
 {
     ESP_LOGW(TAG, "Entering deep sleep - press button to wake");
+    ESP_LOGI(TAG, "Current draw before sleep: %lu uA", static_cast<unsigned long>(measure_current_draw()));
 
     // Ensure outputs are LOW before isolating
-    gpio_set_level(FAN_GATE_PIN, 0);
-    gpio_set_level(LED_PIN, 0);
+    gpio_set_level(Config::FAN_GATE_PIN, 0);
+    gpio_set_level(Config::LED_PIN, 0);
 
     // Isolate all output GPIOs to minimize current draw
     // This puts them in high-impedance state during sleep
     // Keep BUTTON_PIN active for wake-up (not isolated)
-    if (rtc_gpio_is_valid_gpio(FAN_GATE_PIN)) {
-        rtc_gpio_isolate(FAN_GATE_PIN);
+    if (rtc_gpio_is_valid_gpio(Config::FAN_GATE_PIN)) {
+        rtc_gpio_isolate(Config::FAN_GATE_PIN);
     }
-    if (rtc_gpio_is_valid_gpio(LED_PIN)) {
-        rtc_gpio_isolate(LED_PIN);
+    if (rtc_gpio_is_valid_gpio(Config::LED_PIN)) {
+        rtc_gpio_isolate(Config::LED_PIN);
     }
-    if (rtc_gpio_is_valid_gpio(BATTERY_ADC_PIN)) {
-        rtc_gpio_isolate(BATTERY_ADC_PIN);
+    if (rtc_gpio_is_valid_gpio(Config::BATTERY_ADC_PIN)) {
+        rtc_gpio_isolate(Config::BATTERY_ADC_PIN);
     }
 
     // Small delay to allow log to flush
@@ -97,8 +120,7 @@ esp_sleep_wakeup_cause_t get_wakeup_cause()
 
 bool woke_from_deep_sleep()
 {
-    auto cause = get_wakeup_cause();
-    return cause != ESP_SLEEP_WAKEUP_UNDEFINED;
+    return was_woken_from_deep_sleep;
 }
 
 } // namespace power_manager
