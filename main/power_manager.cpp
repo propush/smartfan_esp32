@@ -10,15 +10,6 @@
 namespace {
     const char* TAG = "power_manager";
     bool was_woken_from_deep_sleep = false;
-
-    // Function to measure current draw during sleep
-    uint32_t measure_current_draw()
-    {
-        // This would typically involve reading a current sensing pin or using
-        // the internal ADC to measure voltage across a shunt resistor
-        // For now, return a placeholder value
-        return 0;
-    }
 }
 
 namespace power_manager {
@@ -60,7 +51,7 @@ esp_err_t init()
     // If waking from deep sleep, restore GPIOs that were isolated
     if (woke_from_deep_sleep()) {
         ESP_LOGI(TAG, "Restoring isolated GPIOs after deep sleep wake");
-        ESP_LOGI(TAG, "Current draw before restoration: %lu uA", static_cast<unsigned long>(measure_current_draw()));
+        // ESP_LOGI(TAG, "Current draw before restoration: %lu uA", static_cast<unsigned long>(measure_current_draw()));
 
         // rtc_gpio_isolate() enables hold - we must disable it first
         // Then de-initialize RTC GPIO mode to allow normal GPIO operation
@@ -84,7 +75,7 @@ esp_err_t init()
 [[noreturn]] void enter_deep_sleep()
 {
     ESP_LOGW(TAG, "Entering deep sleep - press button to wake");
-    ESP_LOGI(TAG, "Current draw before sleep: %lu uA", static_cast<unsigned long>(measure_current_draw()));
+    // ESP_LOGI(TAG, "Current draw before sleep: %lu uA", static_cast<unsigned long>(measure_current_draw()));
 
     // Ensure outputs are LOW before isolating
     gpio_set_level(Config::FAN_GATE_PIN, 0);
