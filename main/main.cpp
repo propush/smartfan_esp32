@@ -91,6 +91,41 @@ extern "C" void app_main()
         power_manager::enter_deep_sleep();
     }
 
+    // Check wake cause and decide flow
+    bool start_fan_immediately = false;
+    bool from_deep_sleep = power_manager::woke_from_deep_sleep();
+    ESP_LOGI(TAG, "Wake check: from_deep_sleep=%d", from_deep_sleep);
+
+    if (from_deep_sleep) {
+        // Woke from button press - start fan
+        ESP_LOGI(TAG, "Button wake detected - will start fan");
+        start_fan_immediately = true;
+    } else {
+        // Fresh power-on - check if button is being held
+        // Allow GPIO to stabilize with pull-up before reading
+        vTaskDelay(pdMS_TO_TICKS(50));
+
+        // Sample button multiple times to debounce
+        int pressed_count = 0;
+        for (int i = 0; i < 5; i++) {
+            if (button_handler::is_pressed()) {
+                pressed_count++;
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+
+        ESP_LOGI(TAG, "Button check: %d/5 samples pressed", pressed_count);
+
+        if (pressed_count >= 3) {
+            ESP_LOGI(TAG, "Button held during power-on - starting fan");
+            start_fan_immediately = true;
+        } else {
+            ESP_LOGI(TAG, "Power-on reset - entering deep sleep");
+            vTaskDelay(pdMS_TO_TICKS(100)); // Allow log to flush
+            power_manager::enter_deep_sleep();
+        }
+    }
+
     // Start all tasks
     ESP_LOGI(TAG, "Starting tasks...");
 
@@ -98,17 +133,28 @@ extern "C" void app_main()
     adc_monitor::start();
     button_handler::start();
 
-    ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "System ready!");
-    ESP_LOGI(TAG, "  - Short press: start fan (%lu s), stack up to %lu presses",
-             static_cast<unsigned long>(Config::FAN_ON_TIME_MS / 1000),
-             static_cast<unsigned long>(Config::MAX_PRESS_COUNT));
-    ESP_LOGI(TAG, "  - Long press (>%lu ms): stop fan",
-             static_cast<unsigned long>(Config::LONG_PRESS_TIME_MS));
-    ESP_LOGI(TAG, "  - LED blinks N times for N presses");
-    ESP_LOGI(TAG, "  - Battery monitor: every %lu seconds",
-             static_cast<unsigned long>(Config::ADC_INTERVAL_MS / 1000));
-    ESP_LOGI(TAG, "  - Low battery cutoff: %lu mV (enters deep sleep)",
-             static_cast<unsigned long>(Config::LOW_BATTERY_MV));
-    ESP_LOGI(TAG, "========================================");
+    if (start_fan_immediately) {
+        ESP_LOGI(TAG, "Auto-starting fan from button wake");
+        fan_controller::on();  // Direct call, bypasses queue
+    }
+
+    ESP_LOGI(TAG, "System running - fan will auto-sleep when off");
+
+    // Supervisor loop: wait for fan to turn off, then enter deep sleep
+    while (true) {
+        vTaskDelay(pdMS_TO_TICKS(200));  // Check every 200ms
+
+        FanState state = fan_controller::get_state();
+
+        if (state == FanState::Off) {
+            ESP_LOGI(TAG, "Fan off - entering deep sleep");
+            vTaskDelay(pdMS_TO_TICKS(100)); // Brief delay for pending operations
+            power_manager::enter_deep_sleep();
+        }
+
+        if (state == FanState::Shutdown) {
+            // Low battery - adc_monitor handles sleep
+            break;
+        }
+    }
 }

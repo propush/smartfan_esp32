@@ -51,7 +51,6 @@ esp_err_t init()
     // If waking from deep sleep, restore GPIOs that were isolated
     if (woke_from_deep_sleep()) {
         ESP_LOGI(TAG, "Restoring isolated GPIOs after deep sleep wake");
-        // ESP_LOGI(TAG, "Current draw before restoration: %lu uA", static_cast<unsigned long>(measure_current_draw()));
 
         // rtc_gpio_isolate() enables hold - we must disable it first
         // Then de-initialize RTC GPIO mode to allow normal GPIO operation
@@ -74,8 +73,20 @@ esp_err_t init()
 
 [[noreturn]] void enter_deep_sleep()
 {
+    ESP_LOGW(TAG, "Preparing for deep sleep...");
+
+    // EXT0 is level-triggered: if button is LOW when we sleep, we wake immediately.
+    // Wait for button release before sleeping.
+    if (gpio_get_level(Config::BUTTON_PIN) == 0) {
+        ESP_LOGI(TAG, "Waiting for button release before sleep...");
+        while (gpio_get_level(Config::BUTTON_PIN) == 0) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+        // Debounce delay after release
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
     ESP_LOGW(TAG, "Entering deep sleep - press button to wake");
-    // ESP_LOGI(TAG, "Current draw before sleep: %lu uA", static_cast<unsigned long>(measure_current_draw()));
 
     // Ensure outputs are LOW before isolating
     gpio_set_level(Config::FAN_GATE_PIN, 0);
@@ -94,7 +105,13 @@ esp_err_t init()
         rtc_gpio_isolate(Config::BATTERY_ADC_PIN);
     }
 
-    // Small delay to allow log to flush
+    // Configure RTC pull-up on button pin - regular GPIO pull-up is lost during deep sleep
+    rtc_gpio_init(Config::BUTTON_PIN);
+    rtc_gpio_set_direction(Config::BUTTON_PIN, RTC_GPIO_MODE_INPUT_ONLY);
+    rtc_gpio_pullup_en(Config::BUTTON_PIN);
+    rtc_gpio_pulldown_dis(Config::BUTTON_PIN);
+
+    // Small delay to allow log to flush and pull-up to stabilize
     vTaskDelay(pdMS_TO_TICKS(100));
 
     // Enter deep sleep - will wake on button press (GPIO4 LOW)
