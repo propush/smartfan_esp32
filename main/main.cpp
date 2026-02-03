@@ -1,6 +1,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_pm.h"
 #include "nvs_flash.h"
 
 #include "config.hpp"
@@ -16,7 +17,18 @@ namespace {
 
 extern "C" void app_main()
 {
-    ESP_LOGI(TAG, "ESP32-S3 Fan Controller Starting");
+    // Configure CPU frequency to 40 MHz for power savings
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = 40,
+        .min_freq_mhz = 40,
+        .light_sleep_enable = false
+    };
+    esp_err_t pm_err = esp_pm_configure(&pm_config);
+    if (pm_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to configure power management: %s", esp_err_to_name(pm_err));
+    }
+
+    ESP_LOGI(TAG, "ESP32-S3 Fan Controller Starting (CPU: 40 MHz)");
     ESP_LOGI(TAG, "========================================");
 
     // Validate configuration
