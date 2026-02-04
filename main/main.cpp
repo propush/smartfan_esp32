@@ -17,10 +17,10 @@ namespace {
 
 extern "C" void app_main()
 {
-    // Configure CPU frequency to 40 MHz for power savings
+    // Configure CPU frequency to 20 MHz for power savings
     esp_pm_config_t pm_config = {
-        .max_freq_mhz = 40,
-        .min_freq_mhz = 40,
+        .max_freq_mhz = 20,
+        .min_freq_mhz = 20,
         .light_sleep_enable = false
     };
     esp_err_t pm_err = esp_pm_configure(&pm_config);
@@ -28,7 +28,7 @@ extern "C" void app_main()
         ESP_LOGE(TAG, "Failed to configure power management: %s", esp_err_to_name(pm_err));
     }
 
-    ESP_LOGI(TAG, "ESP32-S3 Fan Controller Starting (CPU: 40 MHz)");
+    ESP_LOGI(TAG, "ESP32-S3 Fan Controller Starting (CPU: 20 MHz)");
     ESP_LOGI(TAG, "========================================");
 
     // Validate configuration

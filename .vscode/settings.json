@@ -16,5 +16,6 @@
     "--query-driver=**",
     "--compile-commands-dir=/Users/pushkin/projects/el/smartfan/sfesp32/build"
   ],
-  "idf.flashType": "JTAG"
+  "idf.flashType": "JTAG",
+  "idf.currentSetup": "/Users/pushkin/esp/v5.5.1/esp-idf"
 }
