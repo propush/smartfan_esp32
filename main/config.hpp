@@ -37,7 +37,7 @@ public:
     static constexpr uint32_t FULL_BATTERY_MV = 4200;    /**< 4.2V full charge */
 
     // Timing Configuration
-    static constexpr uint32_t FAN_ON_TIME_MS = 30000; /**< Fan runs for 30 seconds per press */
+    static constexpr uint32_t FAN_ON_TIME_MS = 60000; /**< Fan runs for 60 seconds per press */
     static constexpr uint32_t ADC_INTERVAL_MS = 5000; /**< Check battery every 5 seconds */
     static constexpr uint32_t DEBOUNCE_TIME_MS = 50;  /**< Button debounce time */
 
@@ -46,7 +46,7 @@ public:
 
     // Timer Stacking
     static constexpr uint32_t MAX_PRESS_COUNT = 5;      /**< Maximum button presses to stack */
-    static constexpr uint32_t MAX_FAN_TIME_MS = 150000; /**< 150 seconds max (5 × 30s) */
+    static constexpr uint32_t MAX_FAN_TIME_MS = 300000; /**< 300 seconds max (5 × 60s) */
 
     // LED Timing
     static constexpr uint32_t LED_BLINK_ON_MS = 150;  /**< LED on duration per blink */
@@ -69,8 +69,8 @@ public:
     // Fan Command Types
     enum class FanCommand
     {
-        On,      /**< Start fan (30s) - first press */
-        AddTime, /**< Add 30s to running fan - subsequent presses */
+        On,      /**< Start fan (60s) - first press */
+        AddTime, /**< Add 60s to running fan - subsequent presses */
         Off,     /**< Stop fan (auto-off or long press) */
         Shutdown /**< Low battery shutdown */
     };

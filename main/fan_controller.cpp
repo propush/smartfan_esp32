@@ -21,7 +21,7 @@ namespace {
 
     void handle_on_command()
     {
-        // First press: start fan with 30s timer
+        // First press: start fan with 60s timer
         press_count.store(1);
         fan_off_time_us = esp_timer_get_time() + (static_cast<int64_t>(Config::FAN_ON_TIME_MS) * 1000);
 
@@ -53,7 +53,7 @@ namespace {
             return;
         }
 
-        // Add 30s to existing timer
+        // Add 60s to existing timer
         current_count++;
         press_count.store(current_count);
         fan_off_time_us += static_cast<int64_t>(Config::FAN_ON_TIME_MS) * 1000;
